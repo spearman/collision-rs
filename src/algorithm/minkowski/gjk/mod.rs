@@ -10,7 +10,7 @@ use cgmath::BaseFloat;
 use cgmath::prelude::*;
 use num::NumCast;
 
-use self::simplex::{SimplexProcessor2, SimplexProcessor3};
+use self::simplex::{Simplex, SimplexProcessor2, SimplexProcessor3};
 use {CollisionStrategy, Contact};
 use algorithm::minkowski::{EPA2, EPA3, SupportPoint, EPA};
 use prelude::*;
@@ -102,7 +102,7 @@ where
         left_transform: &TL,
         right: &PR,
         right_transform: &TR,
-    ) -> Option<Vec<SupportPoint<P>>>
+    ) -> Option<Simplex<P>>
     where
         P: EuclideanSpace<Scalar = S>,
         PL: Primitive<Point = P>,
@@ -122,7 +122,7 @@ where
         if a.v.dot(d) <= S::zero() {
             return None;
         }
-        let mut simplex: Vec<SupportPoint<P>> = Vec::default();
+        let mut simplex = Simplex::new();
         simplex.push(a);
         d = d.neg();
         for _ in 0..self.max_iterations {
@@ -178,94 +178,77 @@ where
             - left_transform.start.transform_point(P::origin());
         let right_lin_vel = right_transform.end.transform_point(P::origin())
             - right_transform.start.transform_point(P::origin());
-        let r = left_lin_vel - right_lin_vel;
+        let ray = right_lin_vel - left_lin_vel;
 
         // initialize time of impact
         let mut lambda = S::zero();
         let mut normal = P::Diff::zero();
+        let mut ray_origin = P::origin();
 
-        // build the start transforms
-        let mut left_curr_transform = left_transform
-            .start
-            .translation_interpolate(left_transform.end, lambda);
-        let mut right_curr_transform = right_transform
-            .start
-            .translation_interpolate(right_transform.end, lambda);
-
-        // build simplex and get the first support point
-        let mut simplex = Vec::with_capacity(5);
-        simplex.push(SupportPoint::from_minkowski(
+        // build simplex and get an initial support point to bootstrap the algorithm
+        let mut simplex = Simplex::new();
+        let p = SupportPoint::from_minkowski(
             left,
-            &left_curr_transform,
+            left_transform.start,
             right,
-            &right_curr_transform,
-            &-r,
-        ));
-        let mut d = simplex[0].v;
-        for _ in 0..self.max_iterations {
-            // d almost at origin means we have a hit
-            if d.magnitude2() <= self.continuous_tolerance {
-                let mut contact = Contact::new_with_point(
-                    CollisionStrategy::FullResolution,
-                    normal.normalize(),
-                    d.magnitude(),
-                    simplex.last().unwrap().sup_a,
-                );
-                contact.time_of_impact = lambda;
-                return Some(contact);
-            }
+            right_transform.start,
+            &-ray,
+        );
+        // we only need the actual support point for this
+        let mut v = p.v;
 
-            // time of impact > 1 means miss
-            if lambda > S::one() {
-                return None;
-            }
-
+        // if the squared magnitude is small enough, we have a hit and can stop
+        while v.magnitude2() > self.continuous_tolerance {
+            // get a new support point
             let p = SupportPoint::from_minkowski(
                 left,
-                &left_curr_transform,
+                left_transform.start,
                 right,
-                &right_curr_transform,
-                &-d,
+                right_transform.start,
+                &-v,
             );
 
-            let vp = d.dot(p.v);
-            if vp > S::zero() {
-                let vr = d.dot(r);
-                if vr >= -self.continuous_tolerance {
-                    return None;
+            let vp = v.dot(p.v);
+            let vr = v.dot(ray);
+            // check if we have a hit point along the ray further than the current clipped ray
+            if vp > lambda * vr {
+                // if the hit point is in the positive ray direction, we clip the ray, clear
+                // the simplex and start over from a new ray origin
+                if vr > S::zero() {
+                    lambda = vp / vr;
+                    // if the clipped hit point is beyond the end of the ray,
+                    // we can never have a hit
+                    if lambda > S::one() {
+                        return None;
+                    }
+                    ray_origin = P::from_vec(ray * lambda);
+                    simplex.clear();
+                    normal = -v;
                 } else {
-                    // we have a potential hit, move origin forwards along the ray
-                    lambda -= vp / vr;
-
-                    // interpolate translation of shapes along the ray
-                    left_curr_transform = left_transform
-                        .start
-                        .translation_interpolate(left_transform.end, lambda);
-                    right_curr_transform = right_transform
-                        .start
-                        .translation_interpolate(right_transform.end, lambda);
-                    normal = d;
+                    // if the hitpoint is behind the ray origin, we can never have a hit
+                    return None;
                 }
             }
-            simplex.push(p);
-
-            // if reduction returns true, we have a hit, so return time of impact
-            // if not, the simplex is reduced to the closest feature to the origin, and v is the
-            // normal of the feature in the direction of the origin
-            if self.simplex_processor
-                .reduce_to_closest_feature(&mut simplex, &mut d)
-            {
-                let mut contact = Contact::new_with_point(
-                    CollisionStrategy::FullResolution,
-                    normal.normalize(),
-                    d.magnitude(),
-                    simplex.last().unwrap().sup_a,
-                );
-                contact.time_of_impact = lambda;
-                return Some(contact);
-            }
+            // we construct the simplex around the current ray origin (if we can)
+            simplex.push(p - ray_origin);
+            v = self.simplex_processor
+                .get_closest_point_to_origin(&mut simplex);
         }
-        None
+        if v.magnitude2() <= self.continuous_tolerance {
+            let transform = right_transform
+                .start
+                .translation_interpolate(right_transform.end, lambda);
+            let mut contact = Contact::new_with_point(
+                CollisionStrategy::FullResolution,
+                -normal.normalize(), // our convention is normal points from B towards A
+                v.magnitude(),       // will always be very close to zero
+                transform.transform_point(ray_origin),
+            );
+            contact.time_of_impact = lambda;
+            Some(contact)
+        } else {
+            None
+        }
     }
 
     /// Compute the distance between the given primitives.
@@ -300,7 +283,7 @@ where
         let zero = P::Diff::zero();
         let right_pos = right_transform.transform_point(P::origin());
         let left_pos = left_transform.transform_point(P::origin());
-        let mut simplex = Vec::with_capacity(5);
+        let mut simplex = Simplex::new();
         let mut d = right_pos - left_pos;
         if ulps_eq!(d, P::Diff::zero()) {
             d = P::Diff::from_value(S::one());
@@ -390,10 +373,10 @@ where
     {
         use CollisionStrategy::*;
         self.intersect(left, left_transform, right, right_transform)
-            .and_then(|mut simplex| match *strategy {
+            .and_then(|simplex| match *strategy {
                 CollisionOnly => Some(Contact::new(CollisionOnly)),
                 FullResolution => self.get_contact_manifold(
-                    &mut simplex,
+                    &mut simplex.into_vec(),
                     left,
                     left_transform,
                     right,
@@ -769,10 +752,10 @@ mod tests {
 
     #[test]
     fn test_gjk_time_of_impact_2d() {
-        let left = Rectangle::new(10., 10.);
+        let left = Rectangle::new(10., 20.);
         let left_start_transform = transform(0., 0., 0.);
         let left_end_transform = transform(30., 0., 0.);
-        let right = Rectangle::new(10., 10.);
+        let right = Rectangle::new(10., 11.);
         let right_transform = transform(15., 0., 0.);
         let gjk = GJK2::new();
 
@@ -784,6 +767,9 @@ mod tests {
         ).unwrap();
 
         assert_ulps_eq!(0.1666667, contact.time_of_impact);
+        assert_eq!(Vector2::new(-1., 0.), contact.normal);
+        assert_eq!(0., contact.penetration_depth);
+        assert_eq!(Point2::new(10., 0.), contact.contact_point);
 
         assert!(gjk.intersection_time_of_impact(
             &left,
@@ -795,10 +781,10 @@ mod tests {
 
     #[test]
     fn test_gjk_time_of_impact_3d() {
-        let left = Cuboid::new(10., 10., 10.);
+        let left = Cuboid::new(10., 11., 10.);
         let left_start_transform = transform_3d(0., 0., 0., 0.);
         let left_end_transform = transform_3d(30., 0., 0., 0.);
-        let right = Cuboid::new(10., 10., 10.);
+        let right = Cuboid::new(10., 15., 10.);
         let right_transform = transform_3d(15., 0., 0., 0.);
         let gjk = GJK3::new();
 
@@ -810,6 +796,9 @@ mod tests {
         ).unwrap();
 
         assert_ulps_eq!(0.1666667, contact.time_of_impact);
+        assert_eq!(Vector3::new(-1., 0., 0.), contact.normal);
+        assert_eq!(0., contact.penetration_depth);
+        assert_eq!(Point3::new(10., 0., 0.), contact.contact_point);
 
         assert!(gjk.intersection_time_of_impact(
             &left,
