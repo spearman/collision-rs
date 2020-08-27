@@ -34,13 +34,13 @@ name = "collision"
 [dependencies]
 rand = "0.7"
 approx = "0.3" # Only for the macros; for all other instances use the re-exported cgmath ones.
-cgmath = { version = "0.17", git = "git://github.com/brendanzab/cgmath.git" }
+cgmath = { version = "0.17", git = "git://github.com/rustgd/cgmath.git" }
 serde = { version = "1.0", optional = true, features = ["derive"] }
 bit-set = "0.5"
 smallvec = "0.6.1"
 
 [target.'cfg(feature="serde")'.dependencies]
-cgmath = { version = "0.17", git = "git://github.com/brendanzab/cgmath.git", features = ["serde"] }
+cgmath = { version = "0.17", git = "git://github.com/rustgd/cgmath.git", features = ["serde"] }
 num = { version = "0.2", features = ["serde"] }
 
 [dev-dependencies]
