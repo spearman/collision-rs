@@ -8,12 +8,14 @@ use std::ops::{Neg, Range};
 
 use cgmath::BaseFloat;
 use cgmath::prelude::*;
-use num::NumCast;
+use cgmath::num_traits::NumCast;
+use cgmath::UlpsEq;
 
 use self::simplex::{Simplex, SimplexProcessor2, SimplexProcessor3};
-use {CollisionStrategy, Contact};
-use algorithm::minkowski::{EPA2, EPA3, SupportPoint, EPA};
-use prelude::*;
+use crate::{CollisionStrategy, Contact};
+use crate::algorithm::minkowski::{EPA2, EPA3, SupportPoint, EPA};
+use crate::prelude::*;
+use approx::ulps_eq;
 
 mod simplex;
 
@@ -108,7 +110,7 @@ where
         PL: Primitive<Point = P>,
         PR: Primitive<Point = P>,
         SP: SimplexProcessor<Point = P>,
-        P::Diff: Neg<Output = P::Diff> + InnerSpace + Zero + Array<Element = S>,
+        P::Diff: Neg<Output = P::Diff> + InnerSpace + Zero + Array<Element = S> + UlpsEq,
         TL: Transform<P>,
         TR: Transform<P>,
     {
@@ -276,7 +278,7 @@ where
         PL: Primitive<Point = P>,
         PR: Primitive<Point = P>,
         SP: SimplexProcessor<Point = P>,
-        P::Diff: Neg<Output = P::Diff> + InnerSpace + Zero + Array<Element = S>,
+        P::Diff: Neg<Output = P::Diff> + InnerSpace + Zero + Array<Element = S> + UlpsEq,
         TL: Transform<P>,
         TR: Transform<P>,
     {
@@ -364,7 +366,7 @@ where
     ) -> Option<Contact<P>>
     where
         P: EuclideanSpace<Scalar = S>,
-        P::Diff: Neg<Output = P::Diff> + InnerSpace + Zero + Array<Element = S>,
+        P::Diff: Neg<Output = P::Diff> + InnerSpace + Zero + Array<Element = S> + UlpsEq,
         PL: Primitive<Point = P>,
         PR: Primitive<Point = P>,
         TL: Transform<P>,
@@ -414,7 +416,7 @@ where
     ) -> Option<Contact<P>>
     where
         P: EuclideanSpace<Scalar = S>,
-        P::Diff: Neg<Output = P::Diff> + InnerSpace + Zero + Array<Element = S>,
+        P::Diff: Neg<Output = P::Diff> + InnerSpace + Zero + Array<Element = S> + UlpsEq,
         PL: Primitive<Point = P>,
         PR: Primitive<Point = P>,
         TL: Transform<P>,
@@ -478,7 +480,7 @@ where
     ) -> Option<S>
     where
         P: EuclideanSpace<Scalar = S>,
-        P::Diff: Neg<Output = P::Diff> + InnerSpace + Zero + Array<Element = S>,
+        P::Diff: Neg<Output = P::Diff> + InnerSpace + Zero + Array<Element = S> + UlpsEq,
         PL: Primitive<Point = P>,
         PR: Primitive<Point = P>,
         TL: Transform<P>,
@@ -587,9 +589,10 @@ where
 mod tests {
     use cgmath::{Basis2, Decomposed, Point2, Point3, Quaternion, Rad, Rotation2, Rotation3,
                  Vector2, Vector3};
+    use approx::assert_ulps_eq;
 
     use super::*;
-    use primitive::*;
+    use crate::primitive::*;
 
     fn transform(x: f32, y: f32, angle: f32) -> Decomposed<Vector2<f32>, Basis2<f32>> {
         Decomposed {

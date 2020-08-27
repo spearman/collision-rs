@@ -1,10 +1,12 @@
 use std::fmt;
 
-use cgmath::{ApproxEq, BaseFloat, Point3, Vector3, Vector4};
+use cgmath::{BaseFloat, Point3, Vector3, Vector4};
+use cgmath::{AbsDiffEq, RelativeEq, UlpsEq};
 use cgmath::prelude::*;
+use approx::{ulps_eq, ulps_ne};
 
-use Ray3;
-use prelude::*;
+use crate::Ray3;
+use crate::prelude::*;
 
 /// A 3-dimensional plane formed from the equation: `A*x + B*y + C*z - D = 0`.
 ///
@@ -47,7 +49,7 @@ impl<S: BaseFloat> Plane<S> {
     pub fn from_abcd(a: S, b: S, c: S, d: S) -> Plane<S> {
         Plane {
             n: Vector3::new(a, b, c),
-            d: d,
+            d,
         }
     }
 
@@ -91,7 +93,7 @@ impl<S: BaseFloat> Plane<S> {
     /// Construct a plane from a point and a normal vector.
     /// The plane will contain the point `p` and be perpendicular to `n`.
     pub fn from_point_normal(p: Point3<S>, n: Vector3<S>) -> Plane<S> {
-        Plane { n: n, d: p.dot(n) }
+        Plane { n, d: p.dot(n) }
     }
 
     /// Normalize a plane.
@@ -105,9 +107,10 @@ impl<S: BaseFloat> Plane<S> {
     }
 }
 
-impl<S> ApproxEq for Plane<S>
-where
-    S: BaseFloat,
+impl<S: AbsDiffEq> AbsDiffEq for Plane<S>
+    where
+        S::Epsilon: Copy,
+        S: BaseFloat,
 {
     type Epsilon = S::Epsilon;
 
@@ -117,19 +120,36 @@ where
     }
 
     #[inline]
+    fn abs_diff_eq(&self, other: &Self, epsilon: S::Epsilon) -> bool {
+        Vector3::abs_diff_eq(&self.n, &other.n, epsilon)
+            && S::abs_diff_eq(&self.d, &other.d, epsilon)
+    }
+}
+
+impl<S: RelativeEq> RelativeEq for Plane<S>
+    where
+        S::Epsilon: Copy,
+        S: BaseFloat,
+{
+    #[inline]
     fn default_max_relative() -> S::Epsilon {
         S::default_max_relative()
-    }
-
-    #[inline]
-    fn default_max_ulps() -> u32 {
-        S::default_max_ulps()
     }
 
     #[inline]
     fn relative_eq(&self, other: &Self, epsilon: S::Epsilon, max_relative: S::Epsilon) -> bool {
         Vector3::relative_eq(&self.n, &other.n, epsilon, max_relative)
             && S::relative_eq(&self.d, &other.d, epsilon, max_relative)
+    }
+}
+impl<S: UlpsEq> UlpsEq for Plane<S>
+    where
+        S::Epsilon: Copy,
+        S: BaseFloat,
+{
+    #[inline]
+    fn default_max_ulps() -> u32 {
+        S::default_max_ulps()
     }
 
     #[inline]

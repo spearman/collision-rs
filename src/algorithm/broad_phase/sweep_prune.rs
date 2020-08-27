@@ -2,10 +2,10 @@ pub use self::variance::Variance;
 
 use std::cmp::Ordering;
 
-use num::NumCast;
+use cgmath::num_traits::NumCast;
 
 use self::variance::{Variance2, Variance3};
-use prelude::*;
+use crate::prelude::*;
 
 /// Broad phase sweep and prune algorithm for 2D, see
 /// [SweepAndPrune](struct.SweepAndPrune.html) for more information.
@@ -26,8 +26,10 @@ pub type SweepAndPrune3<S, B> = SweepAndPrune<Variance3<S, B>>;
 ///
 /// # Type parameters:
 ///
-/// - `V`: Variance type used for computing what axis to use on the next iteration. Should be either
-///        `Variance2` or `Variance3`.
+/// - `V`: Variance type used for computing what axis to use on the next iteration.
+///        [SweepAndPrune2](type.SweepAndPrune2.html) and [SweepAndPrune3](type.SweepAndPrune3.html)
+///        provide a variance type for you, so they should be used if you do not have a custom type
+///        implementing [Variance](trait.Variance.html).
 pub struct SweepAndPrune<V> {
     sweep_axis: usize,
     variance: V,
@@ -135,7 +137,7 @@ where
 mod variance {
     use std::marker;
 
-    use Bound;
+    use crate::Bound;
     use cgmath::{BaseFloat, Point2, Point3, Vector2, Vector3};
     use cgmath::prelude::*;
 
@@ -279,7 +281,7 @@ mod tests {
     use cgmath::Point2;
 
     use super::*;
-    use Aabb2;
+    use crate::Aabb2;
 
     #[derive(Debug, Clone, PartialEq)]
     pub struct BroadCollisionInfo2 {
